@@ -1,0 +1,32 @@
+// parallel interface write enable example
+//
+// parameter defines for this example
+//
+
+
+addrmap foo{
+        default reset=0;
+		reg {
+		   field {sw=rw; hw=r; counter; hwset; hwclr; swwel;} count_fld[8] = 8'h55;
+		   field {sw=rw; intr; } intr1;
+		   field {sw=rw; intr;} intr2;
+		} intr_reg;
+		
+		reg{
+		   field {sw=rw;hw=w;}  log_err[8] =8'h4;
+		   field {sw=r;hw=w;}  log_value[8] =8'h0;		   
+		} log_reg;		
+		
+		reg {
+		   regwidth=64;
+		   field{sw=rw; hw=na;} field64[64];
+		} bigreg;
+		
+		addrmap {
+		   reg {
+		      field{sw=rw; hw=na;} field32[32];
+		   } array_reg[8];
+		} childmap_32b @0x100;
+} ;
+
+
