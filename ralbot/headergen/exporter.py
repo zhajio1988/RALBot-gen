@@ -176,6 +176,11 @@ class headerGenExporter:
         else:
             self._max_width = max(node.get_property("accesswidth"), node.get_property("regwidth"), self._max_width)
 
+        if node.is_array:
+            index = "%0d" % node.current_idx
+            if int(index) >=1:
+                return
+
         for field in node.fields(skip_not_present=False):
             self.add_field(node, field)
 
@@ -189,8 +194,13 @@ class headerGenExporter:
         print("debug point field offset ", "%d" % node.low)
 
         regName = parent.inst_name
-        regFieldOffsetMacro = regName.upper() + "_" + node.inst_name
+        fieldName = node.inst_name
+        regFieldOffsetMacro = regName.upper() + "_" + fieldName.upper() + "_" + "OFFSET"
         print("header file content ", "#define ", regFieldOffsetMacro, " %d" % node.low)
+        regFieldMaskMacro = regName.upper() + "_" + fieldName.upper() + "_" + "MASK"
+
+        maskValue = hex(int('1' * node.width, 2) << node.low).replace("0x", "") 
+        print("header file content ", "#define ", regFieldMaskMacro, " 'h%s" % maskValue)
 
         reset = node.get_property("reset")
         if reset is not None:
