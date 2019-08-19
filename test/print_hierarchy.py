@@ -13,10 +13,10 @@ from systemrdl.node import FieldNode, RegNode, AddrmapNode, SignalNode
 
 from ralbot.html import HTMLExporter
 import markdown
+from ralbot.headergen import headerGenExporter
 
 # Collect input files from the command line arguments
 input_files = sys.argv[1:]
-
 
 # Create an instance of the compiler
 rdlc = RDLCompiler()
@@ -40,17 +40,18 @@ class MyModelPrintingListener(RDLListener):
         self.indent = 0
         
     def enter_Component(self, node):
+        pass
         #if not isinstance(node, FieldNode):
         #    print("\t"*self.indent, node.get_path_segment())
         #    self.indent += 1
-        if isinstance(node, AddrmapNode):
-            print("debug point1")
-            print("\t"*self.indent, node.get_path_segment())
+        #if isinstance(node, AddrmapNode):
+        #    print("debug point1")
+        #    print("\t"*self.indent, node.get_path_segment())
 
-            for child in node.children():
-                if not isinstance(child, SignalNode):
-                    print("\t"*self.indent, child.get_path_segment())
-                    self.indent += 1
+        #    for child in node.children():
+        #        if not isinstance(child, SignalNode):
+        #            print("\t"*self.indent, child.get_path_segment())
+        #            self.indent += 1
         #if isinstance(node, RegNode):
         #    print("\t"*self.indent, "%0x" % node.absolute_address)
     
@@ -70,13 +71,17 @@ walker = RDLWalker(unroll=True)
 listener = MyModelPrintingListener()
 walker.walk(root, listener)
 
-md = markdown.Markdown(
-    extensions=['admonition']
-)
+file = ""
+headerfile = headerGenExporter()
+headerfile.export(root, file)
 
-html = HTMLExporter(markdown_inst=md)
-html.export(
-    root,
-    os.path.join(this_dir, "./docs"),
-    home_url="https://github.com/SystemRDL/RALBot-html"
-)
+#md = markdown.Markdown(
+#    extensions=['admonition']
+#)
+#
+#html = HTMLExporter(markdown_inst=md)
+#html.export(
+#    root,
+#    os.path.join(this_dir, "./docs"),
+#    home_url="https://github.com/SystemRDL/RALBot-html"
+#)
