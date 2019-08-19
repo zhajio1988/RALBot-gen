@@ -33,6 +33,6 @@ file = "test.h"
 headerfile = headerGenExporter(languages="cpp")
 headerfile.export(root, file)
 
-file = "test.svh"
+file = "docs/test.svh"
 headerfile = headerGenExporter(languages="verilog")
 headerfile.export(root, file)
