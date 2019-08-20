@@ -3,7 +3,11 @@
 // parameter defines for this example
 //
 
-
+mem fixed_mem #(longint unsigned word_size = 32,
+    longint unsigned memory_size = word_size * 4096) {
+    mementries = memory_size / word_size ;
+    memwidth = word_size ;
+};
 addrmap foo{
         default reset=0;
 		reg {
@@ -21,6 +25,8 @@ addrmap foo{
 		   regwidth=64;
 		   field{sw=rw; hw=na;} field64[64];
 		} bigreg;
+        
+        external fixed_mem mem32;
 		
 		addrmap {
 		   reg {

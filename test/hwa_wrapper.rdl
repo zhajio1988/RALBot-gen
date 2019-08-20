@@ -81,5 +81,5 @@ addrmap addrmap_PICO{
     Transcribed from original manual as an example exercise:
     http://ww1.microchip.com/downloads/en/DeviceDoc/Atmel-8331-8-and-16-bit-AVR-Microcontroller-XMEGA-AU_Manual.pdf";
     signal { activelow; field_reset; cpuif_reset;} reset_n;
-    regs_ral_demo ral_regs_demo @0x0;
+    regs_ral_demo ral_regs_demo @0x100;
 };
