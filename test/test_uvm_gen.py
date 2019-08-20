@@ -31,5 +31,5 @@ except RDLCompileError:
 
 
 file = "test.svh"
-headerfile = uvmGenExporter(languages="verilog")
+headerfile = uvmGenExporter()
 headerfile.export(root, file)
