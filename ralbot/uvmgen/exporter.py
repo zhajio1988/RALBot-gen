@@ -77,8 +77,8 @@ class uvmGenExporter:
             self.add_addressBlock(node)
 
         # Write out UVM RegModel file
-        #with open(path, "w") as f:
-        #    f.write('\n'.join(self.headerFileContent))
+        with open(path, "w") as f:
+            f.write('\n'.join(self.uvmRegContent + self.uvmMemContent +  self.uvmRegBlockContent + self.uvmAddrMapContent))
 
         for i in self.uvmRegContent:
             print(i)
@@ -109,6 +109,7 @@ class uvmGenExporter:
         memNode = list()
         
         for child in node.children(unroll=True):
+            print("debug point3 ", child.inst_name, child.get_path_segment())
             if isinstance(child, RegNode):
                 self.add_register(node, child)
                 regNode.append(child);
@@ -122,7 +123,7 @@ class uvmGenExporter:
         allNodes = regNode + regBlockNode + memNode
         self.add_uvm_top_content(content="class "+ node.inst_name + " extends uvm_reg_block;")
         for child in allNodes:
-            self.add_uvm_top_content(self.indent, "rand %s %s;" %(self.get_class_name(node, child), child.inst_name));            
+            self.add_uvm_top_content(self.indent, "rand %s %s;" %(self.get_class_name(node, child), child.inst_name)); 
         self.add_uvm_top_content('''
    `uvm_object_utils("%s")
    function new(string name = "%s");
@@ -134,6 +135,7 @@ class uvmGenExporter:
         self.add_uvm_top_content(self.indent*2, "default_map = create_map(\"default_map\", `UVM_REG_ADDR_WIDTH'h0, 8, UVM_LITTLE_ENDIAN, 1);")
 
         for child in regNode:
+            print("debug point1")
             self.add_uvm_top_content(self.indent*2, child.inst_name + "=" + self.get_class_name(node, child) +"::type_id::create(\"" + child.inst_name + "\");")
             self.add_uvm_top_content(self.indent*2, "%s.configure(this,null,\"%s\");" % (child.inst_name, child.inst_name))
             self.add_uvm_top_content(self.indent*2, "%s.build();" %(child.inst_name))
@@ -151,56 +153,59 @@ class uvmGenExporter:
             self.add_uvm_top_content(self.indent*2, "default_map.add_mem(%s.default_map, `UVM_REG_ADDR_WIDTH'h%x, \"RW\");" % (child.inst_name, child.address_offset))
 
         self.add_uvm_top_content(self.indent, "endfunction")
-        self.add_uvm_top_content(content="endclass")
+        self.add_uvm_top_content(content="endclass\n")
     #---------------------------------------------------------------------------
     def add_registerFile(self, parent, node):
         regNode = list()
         regBlockNode = list()
         memNode = list()        
         for child in node.children(unroll=True):
+            print("debug point4 ", child.inst_name, child.get_path_segment())
             if isinstance(child, RegNode):
-                self.add_register(parent, child)
+                self.add_register(node, child)
                 regNode.append(child);
             elif isinstance(child, (AddrmapNode, RegfileNode)):
-                self.add_registerFile(parent, child)
+                self.add_registerFile(node, child)
                 regBlockNode.append(child)
             elif isinstance(child, MemNode):
-                self.add_memFile(parent, child)
+                self.add_memFile(node, child)
                 memNode.append(child)
 
         allNodes = regNode + regBlockNode + memNode
-        self.add_uvm_top_content(content="class "+ self.get_class_name(parent, node) + " extends uvm_reg_block;")
+        self.add_uvm_block_content(content="class "+ self.get_class_name(parent, node) + " extends uvm_reg_block;")
         for child in allNodes:
-            self.add_uvm_top_content(self.indent, "rand %s %s;" %(self.get_class_name(node, child), child.inst_name));            
-        self.add_uvm_top_content('''
+            self.add_uvm_block_content(self.indent, "rand %s %s;" %(self.get_class_name(node, child), child.inst_name));            
+        self.add_uvm_block_content('''
    `uvm_object_utils("%s")
    function new(string name = "%s");
       super.new(name, UVM_NO_COVERAGE);
-   endfunction ''' %(node.inst_name, node.inst_name))
-        self.add_uvm_top_content(self.indent, "")
-        self.add_uvm_top_content(self.indent, "virtual function void build();")        
+   endfunction ''' %(self.get_class_name(parent, node), self.get_class_name(parent, node)))
+        self.add_uvm_block_content(self.indent, "")
+        self.add_uvm_block_content(self.indent, "virtual function void build();")        
         # TODO ADDR_WIDTH
-        self.add_uvm_top_content(self.indent*2, "default_map = create_map(\"default_map\", `UVM_REG_ADDR_WIDTH'h0, 8, UVM_LITTLE_ENDIAN, 1);")
+        self.add_uvm_block_content(self.indent*2, "default_map = create_map(\"default_map\", `UVM_REG_ADDR_WIDTH'h0, 8, UVM_LITTLE_ENDIAN, 1);")
 
         for child in regNode:
-            self.add_uvm_top_content(self.indent*2, child.inst_name + "=" + self.get_class_name(node, child) +"::type_id::create(\"" + child.inst_name + "\");")
-            self.add_uvm_top_content(self.indent*2, "%s.configure(this,null,\"%s\");" % (child.inst_name, child.inst_name))
-            self.add_uvm_top_content(self.indent*2, "%s.build();" %(child.inst_name))
-            self.add_uvm_top_content(self.indent*2, "default_map.add_reg(%s, `UVM_REG_ADDR_WIDTH'h%x, " % (child.inst_name, child.address_offset) + "\"RW\", 0);" )
+            print("debug point2")
+            print(self.indent*2, child.inst_name + "=" + self.get_class_name(node, child) +"::type_id::create(\"" + child.inst_name + "\");")
+            self.add_uvm_block_content(self.indent*2, child.inst_name + "=" + self.get_class_name(node, child) +"::type_id::create(\"" + child.inst_name + "\");")
+            self.add_uvm_block_content(self.indent*2, "%s.configure(this,null,\"%s\");" % (child.inst_name, child.inst_name))
+            self.add_uvm_block_content(self.indent*2, "%s.build();" %(child.inst_name))
+            self.add_uvm_block_content(self.indent*2, "default_map.add_reg(%s, `UVM_REG_ADDR_WIDTH'h%x, " % (child.inst_name, child.address_offset) + "\"RW\", 0);" )
 
         for child in regBlockNode:
-            self.add_uvm_top_content(self.indent*2, child.inst_name + "=" + self.get_class_name(node, child) +"::type_id::create(\"" + child.inst_name + "\",,get_full_name());")
-            self.add_uvm_top_content(self.indent*2, "%s.configure(this, \"%s\");" %(child.inst_name, child.inst_name))
-            self.add_uvm_top_content(self.indent*2, "%s.build();" %(child.inst_name))
-            self.add_uvm_top_content(self.indent*2, "default_map.add_submap(%s.default_map, `UVM_REG_ADDR_WIDTH'h%x);" % (child.inst_name, child.address_offset))
+            self.add_uvm_block_content(self.indent*2, child.inst_name + "=" + self.get_class_name(node, child) +"::type_id::create(\"" + child.inst_name + "\",,get_full_name());")
+            self.add_uvm_block_content(self.indent*2, "%s.configure(this, \"%s\");" %(child.inst_name, child.inst_name))
+            self.add_uvm_block_content(self.indent*2, "%s.build();" %(child.inst_name))
+            self.add_uvm_block_content(self.indent*2, "default_map.add_submap(%s.default_map, `UVM_REG_ADDR_WIDTH'h%x);" % (child.inst_name, child.address_offset))
 
         for child in memNode:
-            self.add_uvm_top_content(self.indent*2, child.inst_name + "=" + self.get_class_name(node, child) +"::type_id::create(\"" + child.inst_name + "\",,get_full_name());")
-            self.add_uvm_top_content(self.indent*2, "%s.configure(this, \"%s\");" %(child.inst_name, child.inst_name))
-            self.add_uvm_top_content(self.indent*2, "default_map.add_mem(%s.default_map, `UVM_REG_ADDR_WIDTH'h%x, \"RW\");" % (child.inst_name, child.address_offset))
+            self.add_uvm_block_content(self.indent*2, child.inst_name + "=" + self.get_class_name(node, child) +"::type_id::create(\"" + child.inst_name + "\",,get_full_name());")
+            self.add_uvm_block_content(self.indent*2, "%s.configure(this, \"%s\");" %(child.inst_name, child.inst_name))
+            self.add_uvm_block_content(self.indent*2, "default_map.add_mem(%s.default_map, `UVM_REG_ADDR_WIDTH'h%x, \"RW\");" % (child.inst_name, child.address_offset))
 
-        self.add_uvm_top_content(self.indent, "endfunction")
-        self.add_uvm_top_content(content="endclass")
+        self.add_uvm_block_content(self.indent, "endfunction")
+        self.add_uvm_block_content(content="endclass\n")
 
     #---------------------------------------------------------------------------
     def add_memFile(self, parent, node):
@@ -211,18 +216,17 @@ class uvmGenExporter:
    endfunction
    
    `uvm_object_utils(%s)
-   
-endclass''' % (self.get_class_name(parent, node), node.get_property("mementries"), node.get_property("memwidth"),  self.get_class_name(parent, node)))
+endclass\n''' % (self.get_class_name(parent, node), node.get_property("mementries"), node.get_property("memwidth"),  self.get_class_name(parent, node)))
     #---------------------------------------------------------------------------
     def get_class_name(self, parent, node):
         regBlockName = parent.inst_name
         regName = node.inst_name
         prefixString = "reg_"
-        if isinstance(parent, RegNode):
+        if isinstance(node, RegNode):
             prefixString = "reg_"
-        elif isinstance(parent, (AddrmapNode, RegfileNode)):
+        elif isinstance(node, (AddrmapNode, RegfileNode)):
             prefixString = "block_"
-        elif isinstance(parent, MemNode):
+        elif isinstance(node, MemNode):
             prefixString = "mem_"
 
         if node.is_array:
@@ -232,14 +236,15 @@ endclass''' % (self.get_class_name(parent, node), node.get_property("mementries"
         return regClassName
     #---------------------------------------------------------------------------
     def add_register(self, parent, node):
-        regBlockName = parent.inst_name
-        regName = node.inst_name
-        print("debug point ", regBlockName)
-        if node.is_array:
-            regClassName = "reg_" + regBlockName.lower() + "_" + regName.lower() + "_" + "%d" % node.current_idx 
-        else:
-            regClassName = "reg_" + regBlockName.lower() + "_" + regName.lower()
-        self.add_uvm_reg_content(content = "class " + regClassName + " extends uvm_reg;")
+        #regBlockName = parent.inst_name
+        #regBlockName = node.parent.inst_name
+        #regName = node.inst_name
+        #print("debug point5 ", node.parent.inst_name)
+        #if node.is_array:
+        #    regClassName = "reg_" + regBlockName.lower() + "_" + regName.lower() + "_" + "%d" % node.current_idx 
+        #else:
+        #    regClassName = "reg_" + regBlockName.lower() + "_" + regName.lower()
+        self.add_uvm_reg_content(content = "class " + self.get_class_name(parent, node) + " extends uvm_reg;")
 
         for field in node.fields():
             self.add_uvm_reg_content(self.indent, "rand uvm_reg_field " + field.inst_name + ";");
@@ -260,7 +265,7 @@ endclass''' % (self.get_class_name(parent, node), node.get_property("mementries"
    endfunction
 
    `uvm_object_utils("%s")
-endclass''' %(regClassName, node.size*8 ,regClassName))
+endclass\n''' %(self.get_class_name(parent, node), node.size*8 , self.get_class_name(parent, node)))
 
     def resetStr(self, node):
         reset = node.get_property("reset")
