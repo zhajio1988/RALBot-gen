@@ -11,8 +11,9 @@ class uvmGenExporter:
         self.languages = kwargs.pop("languages", "verilog")
         self.indent = kwargs.pop("indentLvl", "   ")
         self.headerFileContent = list()
-        self.uvmFileContent = list()
+        self.uvmAddrMapContent = list()
         self.uvmRegContent = list()
+        self.uvmMemContent = list()
         self.uvmRegBlockContent = list()
 
         # Check for stray kwargs
@@ -28,6 +29,12 @@ class uvmGenExporter:
         self.ifnDef = self.definePrefix + 'ifndef '
         self.ifDef = self.definePrefix + 'ifdef '
         self.endIf = self.definePrefix + 'endif'
+        self.isSwReadable = True
+        self.isSwWriteable = True
+        self.isRclr = False
+        self.isRset = False
+        self.isWoset = False
+        self.isWoclr = False
 
     def genPkgImports(self):
         self.uvmFileContent.append('import uvm_pkg::*;')
@@ -87,31 +94,127 @@ class uvmGenExporter:
         # Write out UVM RegModel file
         with open(path, "w") as f:
             f.write('\n'.join(self.headerFileContent))
-    
+
+        for i in self.uvmRegContent:
+            print(i)
+        for i in self.uvmMemContent:
+            print(i)
+        for i in self.uvmRegBlockContent:
+            print(i)    
+        for i in self.uvmAddrMapContent:
+            print(i)    
     #---------------------------------------------------------------------------
     def genDefineMacro(self, tag): 
         self.headerFileContent.append(self.ifnDef + " __%s__" % tag)
         self.headerFileContent.append(self.define + " __%s__" % tag)
     #---------------------------------------------------------------------------
-    def add_content(self, content):
-        self.headerFileContent.append(self.define + content)
+    def add_uvm_top_content(self, indentLvl="", content=""):
+        self.uvmAddrMapContent.append(indentLvl + content)
+    #---------------------------------------------------------------------------
+    def add_uvm_block_content(self, indentLvl="", content=""):
+        self.uvmRegBlockContent.append(indentLvl + content)    
+    #---------------------------------------------------------------------------
+    def add_uvm_reg_content(self, indentLvl="", content=""):
+        self.uvmRegContent.append(indentLvl + content)
+    #---------------------------------------------------------------------------
+    def add_uvm_mem_content(self, indentLvl="", content=""):
+        self.uvmMemContent.append(indentLvl + content)
     #---------------------------------------------------------------------------
     def add_addressBlock(self, node):
         self._max_width = None
+        regNode = list()
+        regBlockNode = list()
+        memNode = list()
 
         for child in node.children(unroll=True):
             if isinstance(child, RegNode):
                 self.add_register(node, child)
+                regNode.append(child);
             elif isinstance(child, (AddrmapNode, RegfileNode)):
-                self.add_registerFile(child)
+                self.add_registerFile(node, child)
+                regBlockNode.append(child)
+            elif isinstance(child, MemNode):
+                self.add_memFile(node, child)
+                memNode.append(child)
 
-    def add_registerFile(self, node):
+        allNodes = regNode + regBlockNode + memNode
+        self.add_uvm_top_content(content="class "+ node.inst_name + " extends uvm_reg_block;")
+        for child in allNodes:
+            self.add_uvm_top_content(self.indent, "rand %s %s;" %(self.get_class_name(node, child), child.inst_name));            
+        self.add_uvm_top_content('''
+   `uvm_object_utils("%s")
+   function new(string name = "%s");
+      super.new(name, UVM_NO_COVERAGE);
+   endfunction ''' %(node.inst_name, node.inst_name))
+        self.add_uvm_top_content(self.indent, "")
+        self.add_uvm_top_content(self.indent, "virtual function void build();")        
+        # TODO
+        self.add_uvm_top_content(self.indent*2, "default_map = create_map(\"default_map\", `UVM_REG_ADDR_WIDTH'h0, 8, UVM_LITTLE_ENDIAN, 1);")
+
+        for child in regNode:
+            self.add_uvm_top_content(self.indent*2, child.inst_name + "=" + self.get_class_name(node, child) +"::type_id::create(\"" + child.inst_name + "\");")
+            self.add_uvm_top_content(self.indent*2, "%s.configure(this,null,\"%s\");" % (child.inst_name, child.inst_name))
+            self.add_uvm_top_content(self.indent*2, "%s.build();" %(child.inst_name))
+            self.add_uvm_top_content(self.indent*2, "default_map.add_reg(%s, `UVM_REG_ADDR_WIDTH'h%x, " % (child.inst_name, child.address_offset) + "\"RW\", 0);" )
+
+        for child in regBlockNode:
+            self.add_uvm_top_content(self.indent*2, child.inst_name + "=" + self.get_class_name(node, child) +"::type_id::create(\"" + child.inst_name + "\",,get_full_name());")
+            self.add_uvm_top_content(self.indent*2, "%s.configure(this, \"%s\");" %(child.inst_name, child.inst_name))
+            self.add_uvm_top_content(self.indent*2, "%s.build();" %(child.inst_name))
+            self.add_uvm_top_content(self.indent*2, "default_map.add_submap(%s.default_map, `UVM_REG_ADDR_WIDTH'h%x);" % (child.inst_name, child.address_offset))
+
+        for child in memNode:
+            self.add_uvm_top_content(self.indent*2, child.inst_name + "=" + self.get_class_name(node, child) +"::type_id::create(\"" + child.inst_name + "\",,get_full_name());")
+            self.add_uvm_top_content(self.indent*2, "%s.configure(this, \"%s\");" %(child.inst_name, child.inst_name))
+            self.add_uvm_top_content(self.indent*2, "default_map.add_mem(%s.default_map, `UVM_REG_ADDR_WIDTH'h%x, \"RW\");" % (child.inst_name, child.address_offset))
+
+        self.add_uvm_top_content(self.indent, "endfunction")
+        self.add_uvm_top_content(content="endclass")
+    #---------------------------------------------------------------------------
+    def add_registerFile(self, parent, node):
+        regNode = list()
+        regBlockNode = list()
+        memNode = list()        
         for child in node.children(unroll=True):
             if isinstance(child, RegNode):
-                self.add_register(node, child)
+                self.add_register(parent, child)
+                regNode.append(child);
             elif isinstance(child, (AddrmapNode, RegfileNode)):
-                self.add_registerFile(child)
+                self.add_registerFile(parent, child)
+                regBlockNode.append(child)
+            elif isinstance(child, MemNode):
+                self.add_memFile(parent, child)
+                memNode.append(child)
 
+
+    #---------------------------------------------------------------------------
+    def add_memFile(self, parent, node):
+        self.add_uvm_mem_content(content = "class " + self.get_class_name(parent, node) + " extends uvm_reg;")
+        self.add_uvm_mem_content('''
+   function new(string name = \"%s\");
+      super.new(name,'h%x, %0d,"RW",UVM_NO_COVERAGE);
+   endfunction
+   
+   `uvm_object_utils(%s)
+   
+endclass''' % (self.get_class_name(parent, node), node.get_property("mementries"), node.get_property("memwidth"),  self.get_class_name(parent, node)))
+    #---------------------------------------------------------------------------
+    def get_class_name(self, parent, node):
+        regBlockName = parent.inst_name
+        regName = node.inst_name
+        prefixString = "reg_"
+        if isinstance(parent, RegNode):
+            prefixString = "reg_"
+        elif isinstance(parent, (AddrmapNode, RegfileNode)):
+            prefixString = "block_"
+        elif isinstance(parent, MemNode):
+            prefixString = "mem_"
+
+        if node.is_array:
+            regClassName = prefixString + regBlockName.lower() + "_" + regName.lower() + "_" + "%d" % node.current_idx 
+        else:
+            regClassName = prefixString + regBlockName.lower() + "_" + regName.lower()
+        return regClassName
     #---------------------------------------------------------------------------
     def add_register(self, parent, node):
         regBlockName = parent.inst_name
@@ -120,29 +223,28 @@ class uvmGenExporter:
             regClassName = "reg_" + regBlockName.lower() + "_" + regName.lower() + "_" + "%d" % node.current_idx 
         else:
             regClassName = "reg_" + regBlockName.lower() + "_" + regName.lower()
-        print("class", regClassName, "extends uvm_reg;")
-        for field in node.fields():
-            print(self.indent, "rand uvm_reg_field", field.inst_name + ";");
+        self.add_uvm_reg_content(content = "class " + regClassName + " extends uvm_reg;")
 
-        print()
-        print(self.indent, "virtual function void build();")
         for field in node.fields():
-            print(self.indent*2, field.inst_name, "= uvm_reg_field::type_id::create(" + field.inst_name + ", null, get_full_name());")
-            isRand = 1 if field.is_sw_writable else 0
-            isVolatile = 1 if field.is_volatile else 0
-            print(self.indent*2, field.inst_name, ".configure(this,", "%0d," % field.width, "%0d," % field.low, 
-            self.getFieldAccessType(field), ", ", isVolatile, self.resetStr(field), ",",  isRand, ", ", self.isOnlyField(node), ");")
-        print(self.indent, "endfunction")
-        #self.add_content(regClassName + " 'h%x" % node.absolute_address)
+            self.add_uvm_reg_content(self.indent, "rand uvm_reg_field " + field.inst_name + ";");
 
-        print('''
+        self.add_uvm_reg_content(self.indent, "")
+        self.add_uvm_reg_content(self.indent, "virtual function void build();")
+        for field in node.fields():
+            isRand = "1" if field.is_sw_writable else "0"
+            isVolatile = "1" if field.is_volatile else "0"
+            self.setSwRdWrProperty(field)
+            self.add_uvm_reg_content(self.indent*2, field.inst_name + "= uvm_reg_field::type_id::create(\"" + field.inst_name + "\", null, get_full_name());")
+            self.add_uvm_reg_content(self.indent*2, field.inst_name + ".configure(this," + (" %0d, " % field.width) + ("%0d, " % field.low) + "\"%s\"" % self.getFieldAccessType(field) + ", " + isVolatile + ", " + self.resetStr(field) + ", " +  isRand + ", " + self.isOnlyField(node) + ");")
+        self.add_uvm_reg_content(self.indent, "endfunction")
+
+        self.add_uvm_reg_content('''
    function new(string name = "%s");
       super.new(name, %0d, UVM_NO_COVERAGE);
    endfunction
 
    `uvm_object_utils("%s")
-endclass''' %(regClassName, node.size*8 ,regClassName)
-                )
+endclass''' %(regClassName, node.size*8 ,regClassName))
         #for field in node.fields():
         #    self.add_field(node, field)
 
@@ -153,15 +255,55 @@ endclass''' %(regClassName, node.size*8 ,regClassName)
         else:
             return "0, 0"
 
-
     def isOnlyField(self, node):
         i = 0;
         for field in node.fields():
             i += 1;
-        return 1 if (i == 1) else 0
+        return "1" if (i == 1) else "0"
+
+    #set other sw read/write properties (these override sw= setting)    
+    def setSwRdWrProperty(self, node):
+        sw = node.get_property("sw")
+        if sw == "rclr":
+            self.isSwReadable = True
+            self.isRclr = True
+        elif sw == "rset":
+            self.isSwReadable = True
+            self.isRset = True
+        elif sw == "woclr":
+            self.isSwWriteable = True
+            self.isWoclr = True
+        elif sw == "woset":
+            self.isSwWriteable = True
+            self.isWoset = True
 
     def getFieldAccessType(self, node):
-        return "WO"
+        accessMode = "RO"
+        if self.isRclr:
+            if self.isWoset:
+                accessMode = "W1SRC"
+            elif node.is_sw_writable:
+                accessMode = "WRC"
+            else:
+                accessMode = "RC"
+        elif self.isRset:
+            if self.isWoclr:
+                accessMode = "W1CRS"
+            elif node.is_sw_writable:
+                accessMode = "WRS"
+            else:
+                accessMode = "RS"
+        else:
+            if self.isWoclr:
+                accessMode = "W1C"
+            elif self.isWoset:
+                accessMode = "W1S"
+            elif node.is_sw_writable:
+                if node.is_sw_readable:
+                    accessMode = "RW"
+                else:
+                    accessMode = "WO"
+        return accessMode
 
     #---------------------------------------------------------------------------
     def add_field(self, parent, node):
