@@ -6,12 +6,11 @@ from . import typemaps
 #===============================================================================
 class uvmGenExporter:
     def __init__(self, **kwargs):
-        self.msg = None
-
         self.indent = kwargs.pop("indentLvl", "   ")
         self.uvmRegContent = list()
         self.uvmMemContent = list()
         self.uvmRegBlockContent = list()
+        self._max_width = None
 
         # Check for stray kwargs
         if kwargs:
@@ -26,12 +25,12 @@ class uvmGenExporter:
 
     #---------------------------------------------------------------------------
     def export(self, node, path):
-        self.msg = node.env.msg
         # Make sure output directory structure exists
         if os.path.dirname(path):
             os.makedirs(os.path.dirname(path), exist_ok=True)
         filename = os.path.basename(path)
         filename = filename.upper().replace('.', '_')
+        self.genDefineMacro(filename)
 
         # If it is the root node, skip to top addrmap
         if isinstance(node, RootNode):
@@ -75,9 +74,13 @@ class uvmGenExporter:
             self.add_addressBlock(node)
 
         # Write out UVM RegModel file
+        self.uvmRegBlockContent.append("`endif")
         with open(path, "w") as f:
             f.write('\n'.join(self.uvmRegContent + self.uvmMemContent +  self.uvmRegBlockContent))
-
+    #---------------------------------------------------------------------------
+    def genDefineMacro(self, tag): 
+        self.uvmRegContent.append("`ifndef __%s__" % tag)
+        self.uvmRegContent.append("`define __%s__" % tag)
     #---------------------------------------------------------------------------
     def add_uvm_block_content(self, indentLvl="", content=""):
         self.uvmRegBlockContent.append(indentLvl + content)    
@@ -105,8 +108,13 @@ class uvmGenExporter:
                 self.add_memFile(node, child)
                 memNode.append(child)
 
+        # Width should be known by now
+        # If mem, and width isn't known, check memwidth
+        if isinstance(node, MemNode) and (self._max_width is None):
+            self._max_width = node.get_property("memwidth")
+
         allNodes = regNode + regBlockNode + memNode
-        self.add_uvm_block_content(content="class "+ node.inst_name + " extends uvm_reg_block;")
+        self.add_uvm_block_content(content="class %s extends uvm_reg_block;" % node.inst_name)
         self.add_variable_declare_func(node, allNodes)  
         self.add_uvm_block_content('''
    `uvm_object_utils("%s")
@@ -116,6 +124,7 @@ class uvmGenExporter:
         self.add_build_func(node, allNodes)
     #---------------------------------------------------------------------------
     def add_registerFile(self, parent, node):
+        self._max_width = None
         regNode = list()
         regBlockNode = list()
         memNode = list()        
@@ -131,7 +140,7 @@ class uvmGenExporter:
                 memNode.append(child)
 
         allNodes = regNode + regBlockNode + memNode
-        self.add_uvm_block_content(content="class "+ self.get_class_name(parent, node) + " extends uvm_reg_block;")
+        self.add_uvm_block_content(content="class %s extends uvm_reg_block;" % self.get_class_name(parent, node))
         self.add_variable_declare_func(node, allNodes)  
         self.add_uvm_block_content('''
    `uvm_object_utils("%s")
@@ -139,6 +148,38 @@ class uvmGenExporter:
       super.new(name, UVM_NO_COVERAGE);
    endfunction ''' %(self.get_class_name(parent, node), self.get_class_name(parent, node)))
         self.add_build_func(node, allNodes)
+
+    #---------------------------------------------------------------------------
+    def add_register(self, parent, node):
+        if self._max_width is None:
+            self._max_width = max(node.get_property("accesswidth"), node.get_property("regwidth"))
+        else:
+            self._max_width = max(node.get_property("accesswidth"), node.get_property("regwidth"), self._max_width)
+
+        self.add_uvm_reg_content(content = "class %s extends uvm_reg;" % self.get_class_name(parent, node))
+
+        for field in node.fields():
+            self.add_uvm_reg_content(self.indent, "rand uvm_reg_field %s;" % field.inst_name);
+
+        self.add_uvm_reg_content(self.indent, "")
+        self.add_uvm_reg_content(self.indent, "virtual function void build();")
+        for field in node.fields():
+            isRand = "1" if field.is_sw_writable else "0"
+            isVolatile = "1" if field.is_volatile else "0"
+            self.setSwRdWrProperty(field)
+            self.add_uvm_reg_content(self.indent*2, "%s = uvm_reg_field::type_id::create(\"%s\", null, get_full_name());" % (field.inst_name, field.inst_name))
+            self.add_uvm_reg_content(self.indent*2, "%s.configure(this, %0d, %0d, \"%s\", %s, %s, %s, %s);" %(field.inst_name, field.width, field.low, self.getFieldAccessType(field), isVolatile, self.resetStr(field), isRand, self.isOnlyField(node)))
+        self.add_uvm_reg_content(self.indent, "endfunction")
+
+        self.add_uvm_reg_content('''
+   function new(string name = "%s");
+      super.new(name, %0d, UVM_NO_COVERAGE);
+   endfunction
+
+   `uvm_object_utils("%s")
+endclass\n''' %(self.get_class_name(parent, node), node.get_property("regwidth"), self.get_class_name(parent, node)))
+    #---------------------------------------------------------------------------
+    # generate uvm reg model content function
     #---------------------------------------------------------------------------
     def add_variable_declare_func(self, parent, allNodes):
         for child in allNodes:
@@ -151,8 +192,7 @@ class uvmGenExporter:
     def add_build_func(self, parentNode, allNodes):
         self.add_uvm_block_content(self.indent, "")
         self.add_uvm_block_content(self.indent, "virtual function void build();")        
-        # TODO ADDR_WIDTH
-        self.add_uvm_block_content(self.indent*2, "default_map = create_map(\"default_map\", `UVM_REG_ADDR_WIDTH'h0, 8, UVM_LITTLE_ENDIAN, 1);")
+        self.add_uvm_block_content(self.indent*2, "default_map = create_map(\"default_map\", `UVM_REG_ADDR_WIDTH'h0, %0d, UVM_LITTLE_ENDIAN, 1);" % (self._max_width/8))
         for child in allNodes:
             if isinstance(child, RegNode):
                 self.add_build_reg_content(parentNode, child)
@@ -167,31 +207,38 @@ class uvmGenExporter:
     def add_build_reg_content(self, parentNode, child):
         if child.is_array:
             self.add_uvm_block_content(self.indent*2, "foreach (this.%s[i]) begin" %child.inst_name)
-            self.add_uvm_block_content(self.indent*3, child.inst_name + "[i]=" + self.get_class_name(parentNode, child) +"::type_id::create(\"" + child.inst_name + "[i]\");")
-            self.add_uvm_block_content(self.indent*3, "%s[i].configure(this,null,\"%s[i]\");" % (child.inst_name, child.inst_name))
+            self.add_uvm_block_content(self.indent*3, "%s[i] = %s::type_id::create($psprintf(\"%s[%%d]\",i));" % (child.inst_name, self.get_class_name(parentNode, child), child.inst_name))
+            self.add_uvm_block_content(self.indent*3, "%s[i].configure(this, null, \"%s[i]\");" % (child.inst_name, child.inst_name))
             self.add_uvm_block_content(self.indent*3, "%s[i].build();" %(child.inst_name))
             self.add_uvm_block_content(self.indent*3, "default_map.add_reg(%s[i], `UVM_REG_ADDR_WIDTH'h%x+i*`UVM_REG_ADDR_WIDTH'h%x, \"%s\", 0);" % (child.inst_name, child.raw_address_offset, child.array_stride, self.getRegAccessType(child)))
             self.add_uvm_block_content(self.indent*2, "end")
         else:
-            self.add_uvm_block_content(self.indent*2, child.inst_name + "=" + self.get_class_name(parentNode, child) +"::type_id::create(\"" + child.inst_name + "\");")
-            self.add_uvm_block_content(self.indent*2, "%s.configure(this,null,\"%s\");" % (child.inst_name, child.inst_name))
+            self.add_uvm_block_content(self.indent*2, "%s = %s::type_id::create(\"%s\");" % (child.inst_name, self.get_class_name(parentNode, child), child.inst_name))
+            self.add_uvm_block_content(self.indent*2, "%s.configure(this, null, \"%s\");" % (child.inst_name, child.inst_name))
             self.add_uvm_block_content(self.indent*2, "%s.build();" %(child.inst_name))
             self.add_uvm_block_content(self.indent*2, "default_map.add_reg(%s, `UVM_REG_ADDR_WIDTH'h%x, \"%s\", 0);" % (child.inst_name, child.address_offset, self.getRegAccessType(child)))
 
     def add_build_block_content(self, parentNode, child):
-        self.add_uvm_block_content(self.indent*2, child.inst_name + "=" + self.get_class_name(parentNode, child) +"::type_id::create(\"" + child.inst_name + "\",,get_full_name());")
-        self.add_uvm_block_content(self.indent*2, "%s.configure(this, \"%s\");" %(child.inst_name, child.inst_name))
-        self.add_uvm_block_content(self.indent*2, "%s.build();" %(child.inst_name))
-        self.add_uvm_block_content(self.indent*2, "default_map.add_submap(%s.default_map, `UVM_REG_ADDR_WIDTH'h%x);" % (child.inst_name, child.address_offset))
+        if child.is_array:
+            self.add_uvm_block_content(self.indent*2, "foreach (this.%s[i]) begin" %child.inst_name)
+            self.add_uvm_block_content(self.indent*3, "%s[i] = %s::type_id::create($psprintf(\"%s[%%d]\",i), , get_full_name());" % (child.inst_name, self.get_class_name(parentNode, child), child.inst_name))
+            self.add_uvm_block_content(self.indent*3, "%s[i].configure(this, \"\");" % (child.inst_name))
+            self.add_uvm_block_content(self.indent*3, "%s[i].build();" %(child.inst_name))
+            self.add_uvm_block_content(self.indent*3, "default_map.add_submap(%s[i], `UVM_REG_ADDR_WIDTH'h%x+i*`UVM_REG_ADDR_WIDTH'h%x);" % (child.inst_name, child.raw_address_offset, child.array_stride))
+            self.add_uvm_block_content(self.indent*2, "end")            
+        else:
+            self.add_uvm_block_content(self.indent*2,  "%s = %s::type_id::create(\"%s\",,get_full_name());" %(child.inst_name, self.get_class_name(parentNode, child), child.inst_name))
+            self.add_uvm_block_content(self.indent*2, "%s.configure(this, \"\");" %(child.inst_name))
+            self.add_uvm_block_content(self.indent*2, "%s.build();" %(child.inst_name))
+            self.add_uvm_block_content(self.indent*2, "default_map.add_submap(%s.default_map, `UVM_REG_ADDR_WIDTH'h%x);" % (child.inst_name, child.address_offset))
 
     def add_build_mem_content(self, parentNode, child):
-        self.add_uvm_block_content(self.indent*2, child.inst_name + "=" + self.get_class_name(parentNode, child) +"::type_id::create(\"" + child.inst_name + "\",,get_full_name());")
+        self.add_uvm_block_content(self.indent*2, "%s = %s::type_id::create(\"%s\",,get_full_name());" % (child.inst_name, self.get_class_name(parentNode, child), child.inst_name))
         self.add_uvm_block_content(self.indent*2, "%s.configure(this, \"%s\");" %(child.inst_name, child.inst_name))
-        self.add_uvm_block_content(self.indent*2, "default_map.add_mem(%s.default_map, `UVM_REG_ADDR_WIDTH'h%x, \"RW\");" % (child.inst_name, child.address_offset))
+        self.add_uvm_block_content(self.indent*2, "default_map.add_mem(%s.default_map, `UVM_REG_ADDR_WIDTH'h%x, \"%s\");" % (child.inst_name, child.address_offset, typemaps.access_from_sw(child.get_property("sw"))))
 
-    #---------------------------------------------------------------------------
     def add_memFile(self, parent, node):
-        self.add_uvm_mem_content(content = "class " + self.get_class_name(parent, node) + " extends uvm_reg;")
+        self.add_uvm_mem_content(content = "class %s extends uvm_reg;" % self.get_class_name(parent, node))
         self.add_uvm_mem_content('''
    function new(string name = \"%s\");
       super.new(name, 'h%x, %0d, "%s", UVM_NO_COVERAGE);
@@ -199,6 +246,11 @@ class uvmGenExporter:
    
    `uvm_object_utils(%s)
 endclass\n''' % (self.get_class_name(parent, node), node.get_property("mementries"), node.get_property("memwidth"), typemaps.access_from_sw(node.get_property("sw")), self.get_class_name(parent, node)))
+
+
+    #---------------------------------------------------------------------------
+    # utilities function
+    #---------------------------------------------------------------------------
     #---------------------------------------------------------------------------
     def get_class_name(self, parent, node):
         regBlockName = parent.inst_name
@@ -211,30 +263,6 @@ endclass\n''' % (self.get_class_name(parent, node), node.get_property("mementrie
         elif isinstance(node, MemNode):
             prefixString = "mem_"
         return prefixString + regBlockName.lower() + "_" + regName.lower()
-    #---------------------------------------------------------------------------
-    def add_register(self, parent, node):
-        self.add_uvm_reg_content(content = "class " + self.get_class_name(parent, node) + " extends uvm_reg;")
-
-        for field in node.fields():
-            self.add_uvm_reg_content(self.indent, "rand uvm_reg_field " + field.inst_name + ";");
-
-        self.add_uvm_reg_content(self.indent, "")
-        self.add_uvm_reg_content(self.indent, "virtual function void build();")
-        for field in node.fields():
-            isRand = "1" if field.is_sw_writable else "0"
-            isVolatile = "1" if field.is_volatile else "0"
-            self.setSwRdWrProperty(field)
-            self.add_uvm_reg_content(self.indent*2, field.inst_name + "= uvm_reg_field::type_id::create(\"" + field.inst_name + "\", null, get_full_name());")
-            self.add_uvm_reg_content(self.indent*2, field.inst_name + ".configure(this," + (" %0d, " % field.width) + ("%0d, " % field.low) + "\"%s\"" % self.getFieldAccessType(field) + ", " + isVolatile + ", " + self.resetStr(field) + ", " +  isRand + ", " + self.isOnlyField(node) + ");")
-        self.add_uvm_reg_content(self.indent, "endfunction")
-
-        self.add_uvm_reg_content('''
-   function new(string name = "%s");
-      super.new(name, %0d, UVM_NO_COVERAGE);
-   endfunction
-
-   `uvm_object_utils("%s")
-endclass\n''' %(self.get_class_name(parent, node), node.get_property("regwidth"), self.get_class_name(parent, node)))
 
     def resetStr(self, node):
         reset = node.get_property("reset")
