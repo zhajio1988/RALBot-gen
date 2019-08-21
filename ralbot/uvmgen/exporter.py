@@ -108,7 +108,7 @@ class uvmGenExporter:
         regBlockNode = list()
         memNode = list()
         
-        for child in node.children(unroll=True):
+        for child in node.children():
             print("debug point3 ", child.inst_name, child.get_path_segment())
             if isinstance(child, RegNode):
                 self.add_register(node, child)
@@ -123,7 +123,11 @@ class uvmGenExporter:
         allNodes = regNode + regBlockNode + memNode
         self.add_uvm_top_content(content="class "+ node.inst_name + " extends uvm_reg_block;")
         for child in allNodes:
-            self.add_uvm_top_content(self.indent, "rand %s %s;" %(self.get_class_name(node, child), child.inst_name)); 
+            if child.is_array:
+                for dim in child.array_dimensions:
+                    self.add_uvm_top_content(self.indent, "rand %s %s[%0d];" %(self.get_class_name(node, child), child.inst_name, dim));
+            else:
+                self.add_uvm_top_content(self.indent, "rand %s %s;" %(self.get_class_name(node, child), child.inst_name)); 
         self.add_uvm_top_content('''
    `uvm_object_utils("%s")
    function new(string name = "%s");
@@ -138,6 +142,15 @@ class uvmGenExporter:
             print("debug point1")
             if child.is_array:
                 print("debug point1 array")
+                for dim in child.array_dimensions:
+                    print("debug point dim ", dim)
+                print("debug point offset ", child.raw_address_offset + child.array_stride)
+                self.add_uvm_top_content(self.indent*2, "foreach (this.%s[i]) begin" %child.inst_name)
+                self.add_uvm_top_content(self.indent*3, child.inst_name + "[i]=" + self.get_class_name(node, child) +"::type_id::create(\"" + child.inst_name + "[i]\");")
+                self.add_uvm_top_content(self.indent*3, "%s[i].configure(this,null,\"%s[i]\");" % (child.inst_name, child.inst_name))
+                self.add_uvm_top_content(self.indent*3, "%s[i].build();" %(child.inst_name))
+                self.add_uvm_top_content(self.indent*3, "default_map.add_reg(%s[i], `UVM_REG_ADDR_WIDTH'h%x+i*`UVM_REG_ADDR_WIDTH'h%x, " % (child.inst_name, child.raw_address_offset, child.array_stride) + "\"RW\", 0);")
+                self.add_uvm_top_content(self.indent*2, "end")
             else:
                 self.add_uvm_top_content(self.indent*2, child.inst_name + "=" + self.get_class_name(node, child) +"::type_id::create(\"" + child.inst_name + "\");")
                 self.add_uvm_top_content(self.indent*2, "%s.configure(this,null,\"%s\");" % (child.inst_name, child.inst_name))
