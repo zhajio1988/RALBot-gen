@@ -3,7 +3,6 @@ from systemrdl.node import AddressableNode, RootNode
 from systemrdl.node import AddrmapNode, MemNode
 from systemrdl.node import RegNode, RegfileNode, FieldNode
 
-# TODO  should add base Address define
 #===============================================================================
 class headerGenExporter:
     def __init__(self, **kwargs):
@@ -18,9 +17,12 @@ class headerGenExporter:
 
         if self.languages == 'verilog':
             self.definePrefix = '`'
+            self.hexPrefix = '\'h'
         elif self.languages == 'c' or self.languages == 'cpp':
             self.definePrefix = '#'
+            self.hexPrefix = '0x'
 
+        self.baseAddressName = ""
         self.define = self.definePrefix + 'define '
         self.ifnDef = self.definePrefix + 'ifndef '
         self.ifDef = self.definePrefix + 'ifdef '
@@ -91,16 +93,18 @@ class headerGenExporter:
         self.headerFileContent.append(self.define + content)
     #---------------------------------------------------------------------------
     def add_addressBlock(self, node):
-        self._max_width = None
 
-        for child in node.children(unroll=True):
+        self.add_content("%s 0" % ("%s_BASE_ADDR" % node.inst_name.upper()))   
+        self.baseAddressName = ("`%s_BASE_ADDR" % node.inst_name.upper()) if self.languages == 'verilog' else ("%s_BASE_ADDR" % node.inst_name.upper())
+
+        for child in node.children():
             if isinstance(child, RegNode):
                 self.add_register(node, child)
             elif isinstance(child, (AddrmapNode, RegfileNode)):
                 self.add_registerFile(child)
 
     def add_registerFile(self, node):
-        for child in node.children(unroll=True):
+        for child in node.children():
             if isinstance(child, RegNode):
                 self.add_register(node, child)
             elif isinstance(child, (AddrmapNode, RegfileNode)):
@@ -108,39 +112,27 @@ class headerGenExporter:
 
     #---------------------------------------------------------------------------
     def add_register(self, parent, node):
-        regBlockName = parent.inst_name
-        regName = node.inst_name
         if node.is_array:
-            regMacro = regBlockName.upper() + "_" + regName.upper() + "_" + "%d" % node.current_idx 
+            regMacro = parent.inst_name.upper() + "_" + node.inst_name.upper() + "(X)" 
+            self.add_content(regMacro + " %s + %s%x + X``*%s%x" % (self.baseAddressName, self.hexPrefix, node.raw_address_offset, self.hexPrefix, node.array_stride))            
         else:
-            regMacro = regBlockName.upper() + "_" + regName.upper()
-        #print("header file content ", "#define ", regMacro, " 'h%x" % node.absolute_address)
-
-        self.add_content(regMacro + " 'h%x" % node.absolute_address)
-
-        if node.is_array:
-            index = "%0d" % node.current_idx
-            if int(index) >=1:
-                return
+            regMacro = parent.inst_name.upper() + "_" + node.inst_name.upper()
+            self.add_content(regMacro + " %s + %s%x" % (self.baseAddressName, self.hexPrefix, node.absolute_address))
 
         for field in node.fields():
             self.add_field(node, field)
 
     #---------------------------------------------------------------------------
     def add_field(self, parent, node):
-        regName = parent.inst_name
-        fieldName = node.inst_name
-        regFieldOffsetMacro = regName.upper() + "_" + fieldName.upper() + "_" + "OFFSET"
-        #print("header file content ", "#define ", regFieldOffsetMacro, " %d" % node.low)
+        regFieldOffsetMacro = parent.inst_name.upper() + "_" + node.inst_name.upper() + "_" + "OFFSET"
         self.add_content(regFieldOffsetMacro + " %d" % node.low)
 
-        regFieldMaskMacro = regName.upper() + "_" + fieldName.upper() + "_" + "MASK"
+        regFieldMaskMacro = parent.inst_name.upper() + "_" + node.inst_name.upper() + "_" + "MASK"
         maskValue = hex(int('1' * node.width, 2) << node.low).replace("0x", "") 
-        #print("header file content ", "#define ", regFieldMaskMacro, " 'h%s" % maskValue)
-        self.add_content(regFieldMaskMacro + " 'h%s" % maskValue)
+        self.add_content(regFieldMaskMacro + " %s%s" % (self.hexPrefix, maskValue))
 
-        encode = node.get_property("encode")
-        if encode is not None:
-            for enum_value in encode:
-                print("debug point enum ", enum_value.name, enum_value.rdl_name, enum_value.rdl_desc)
-                print("debug point ", "enum value", "'h%x" % enum_value.value)
+        #encode = node.get_property("encode")
+        #if encode is not None:
+        #    for enum_value in encode:
+        #        print("debug point enum ", enum_value.name, enum_value.rdl_name, enum_value.rdl_desc)
+        #        print("debug point ", "enum value", "'h%x" % enum_value.value)
