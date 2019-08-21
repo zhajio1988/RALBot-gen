@@ -129,10 +129,10 @@ class headerGenExporter:
 
     #---------------------------------------------------------------------------
     def add_field(self, parent, node):
-        regFieldOffsetMacro = parent.inst_name.upper() + "_" + node.inst_name.upper() + "_" + "OFFSET"
+        regFieldOffsetMacro = parent.inst_name.upper() + "_REG_" + node.inst_name.upper() + "_" + "OFFSET"
         self.add_content(regFieldOffsetMacro + " %d" % node.low)
 
-        regFieldMaskMacro = parent.inst_name.upper() + "_" + node.inst_name.upper() + "_" + "MASK"
+        regFieldMaskMacro = parent.inst_name.upper() + "_REG_" + node.inst_name.upper() + "_" + "MASK"
         maskValue = hex(int('1' * node.width, 2) << node.low).replace("0x", "") 
         self.add_content(regFieldMaskMacro + " %s%s" % (self.hexPrefix, maskValue))
 
