@@ -15,7 +15,7 @@ class headerGenExporter:
         if kwargs:
             raise TypeError("got an unexpected keyword argument '%s'" % list(kwargs.keys())[0])
 
-        if self.languages == 'verilog':
+        if self.languages == "verilog":
             self.definePrefix = '`'
             self.hexPrefix = '\'h'
         elif self.languages == 'c' or self.languages == 'cpp':
@@ -95,7 +95,7 @@ class headerGenExporter:
     def add_addressBlock(self, node):
 
         self.add_content("%s 0" % ("%s_BASE_ADDR" % node.inst_name.upper()))   
-        self.baseAddressName = ("`%s_BASE_ADDR" % node.inst_name.upper()) if self.languages == 'verilog' else ("%s_BASE_ADDR" % node.inst_name.upper())
+        self.baseAddressName = ("`%s_BASE_ADDR" % node.inst_name.upper()) if self.languages == "verilog" else ("%s_BASE_ADDR" % node.inst_name.upper())
 
         for child in node.children():
             if isinstance(child, RegNode):
@@ -104,17 +104,22 @@ class headerGenExporter:
                 self.add_registerFile(child)
 
     def add_registerFile(self, node):
-        for child in node.children():
-            if isinstance(child, RegNode):
-                self.add_register(node, child)
-            elif isinstance(child, (AddrmapNode, RegfileNode)):
-                self.add_registerFile(child)
+        if node.is_array:
+            for child in node.children():
+                if isinstance(child, RegNode):
+                    self.add_register(node, child)
+                elif isinstance(child, (AddrmapNode, RegfileNode)):
+                    self.add_registerFile(child)
 
     #---------------------------------------------------------------------------
     def add_register(self, parent, node):
-        if node.is_array:
+        X = "X``" if self.languages == "verilog" else "X"
+        if parent.is_array:
             regMacro = parent.inst_name.upper() + "_" + node.inst_name.upper() + "(X)" 
-            self.add_content(regMacro + " %s + %s%x + X``*%s%x" % (self.baseAddressName, self.hexPrefix, node.raw_address_offset, self.hexPrefix, node.array_stride))            
+            self.add_content(regMacro + " %s + %s%x + %s*%s%x + %s%x" % (self.baseAddressName, self.hexPrefix, parent.raw_address_offset, X, self.hexPrefix, parent.array_stride, self.hexPrefix, node.address_offset)) 
+        elif node.is_array:
+            regMacro = parent.inst_name.upper() + "_" + node.inst_name.upper() + "(X)" 
+            self.add_content(regMacro + " %s + %s%x + %s*%s%x" % (self.baseAddressName, self.hexPrefix, node.raw_address_offset, X, self.hexPrefix, node.array_stride))            
         else:
             regMacro = parent.inst_name.upper() + "_" + node.inst_name.upper()
             self.add_content(regMacro + " %s + %s%x" % (self.baseAddressName, self.hexPrefix, node.absolute_address))
