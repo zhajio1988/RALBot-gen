@@ -15,6 +15,7 @@ mem fixed_mem #(longint unsigned word_size = 32,
     longint unsigned memory_size = word_size * 4096) {
     mementries = memory_size / word_size ;
     memwidth = word_size ;
+    sw =rw ;
 };
 addrmap foo{
         default reset=0;
