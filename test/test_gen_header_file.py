@@ -29,10 +29,10 @@ except RDLCompileError:
     # A compilation error occurred. Exit with error code
     sys.exit(1)
 
-file = "test.h"
+file = "test"
 headerfile = headerGenExporter(languages="cpp")
 headerfile.export(root, file)
 
-file = "docs/test.svh"
+file = "docs/test"
 headerfile = headerGenExporter(languages="verilog")
 headerfile.export(root, file)

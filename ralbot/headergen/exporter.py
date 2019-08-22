@@ -6,7 +6,6 @@ from systemrdl.node import RegNode, RegfileNode, FieldNode
 #===============================================================================
 class headerGenExporter:
     def __init__(self, **kwargs):
-        self.msg = None
 
         self.languages = kwargs.pop("languages", "verilog")
         self.headerFileContent = list()
@@ -23,6 +22,8 @@ class headerGenExporter:
             self.hexPrefix = '0x'
 
         self.baseAddressName = ""
+        self.filename = ""
+        self.dirname = "."
         self.define = self.definePrefix + 'define '
         self.ifnDef = self.definePrefix + 'ifndef '
         self.ifDef = self.definePrefix + 'ifdef '
@@ -30,12 +31,17 @@ class headerGenExporter:
 
     #---------------------------------------------------------------------------
     def export(self, node, path):
-        self.msg = node.env.msg
         # Make sure output directory structure exists
         if os.path.dirname(path):
             os.makedirs(os.path.dirname(path), exist_ok=True)
+            self.dirname = os.path.split(path)[0]
         filename = os.path.basename(path)
-        filename = filename.upper().replace('.', '_')
+        filename = os.path.splitext(filename)[0]
+        if self.languages == "verilog":
+            self.filename = filename + ".svh"
+        elif self.languages == 'c' or self.languages == 'cpp':
+            self.filename = filename + ".h"
+        filename = self.filename.upper().replace('.', '_')
         self.genDefineMacro(filename)
 
         # If it is the root node, skip to top addrmap
@@ -79,15 +85,15 @@ class headerGenExporter:
             # Export top-level node as a single addressBlock
             self.add_addressBlock(node)
 
-        self.headerFileContent.append(self.endIf)
+        self.headerFileContent.append("\n" + self.endIf)
         # Write out UVM RegModel file
-        with open(path, "w") as f:
+        with open(os.path.join(self.dirname, self.filename), "w") as f:
             f.write('\n'.join(self.headerFileContent))
     
     #---------------------------------------------------------------------------
     def genDefineMacro(self, tag): 
         self.headerFileContent.append(self.ifnDef + " __%s__" % tag)
-        self.headerFileContent.append(self.define + " __%s__" % tag)
+        self.headerFileContent.append(self.define + " __%s__\n" % tag)
     #---------------------------------------------------------------------------
     def add_content(self, content):
         self.headerFileContent.append(self.define + content)
@@ -104,16 +110,15 @@ class headerGenExporter:
                 self.add_registerFile(child)
 
     def add_registerFile(self, node):
-        if node.is_array:
-            for child in node.children():
-                if isinstance(child, RegNode):
-                    self.add_register(node, child)
-                elif isinstance(child, (AddrmapNode, RegfileNode)):
-                    self.add_registerFile(child)
-
+        for child in node.children():
+            if isinstance(child, RegNode):
+                self.add_register(node, child)
+            elif isinstance(child, (AddrmapNode, RegfileNode)):
+                self.add_registerFile(child)
     #---------------------------------------------------------------------------
     def add_register(self, parent, node):
         X = "X``" if self.languages == "verilog" else "X"
+        self.headerFileContent.append("//register: %s" % node.inst_name)
         if parent.is_array:
             regMacro = parent.inst_name.upper() + "_" + node.inst_name.upper() + "(X)" 
             self.add_content(regMacro + " %s + %s%x + %s*%s%x + %s%x" % (self.baseAddressName, self.hexPrefix, parent.raw_address_offset, X, self.hexPrefix, parent.array_stride, self.hexPrefix, node.address_offset)) 

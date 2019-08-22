@@ -16,6 +16,8 @@ class uvmGenExporter:
         if kwargs:
             raise TypeError("got an unexpected keyword argument '%s'" % list(kwargs.keys())[0])
 
+        self.filename = ""
+        self.dirname = "."
         self.isSwReadable = True
         self.isSwWriteable = True
         self.isRclr = False
@@ -28,8 +30,11 @@ class uvmGenExporter:
         # Make sure output directory structure exists
         if os.path.dirname(path):
             os.makedirs(os.path.dirname(path), exist_ok=True)
+            self.dirname = os.path.split(path)[0]
         filename = os.path.basename(path)
-        filename = filename.upper().replace('.', '_')
+        filename = os.path.splitext(filename)[0]
+        self.filename = filename + "_uvmreg.sv"
+        filename = self.filename.upper().replace('.', '_')
         self.genDefineMacro(filename)
 
         # If it is the root node, skip to top addrmap
@@ -75,7 +80,7 @@ class uvmGenExporter:
 
         # Write out UVM RegModel file
         self.uvmRegBlockContent.append("`endif")
-        with open(path, "w") as f:
+        with open(os.path.join(self.dirname, self.filename), "w") as f:
             f.write('\n'.join(self.uvmRegContent + self.uvmMemContent +  self.uvmRegBlockContent))
     #---------------------------------------------------------------------------
     def genDefineMacro(self, tag): 
