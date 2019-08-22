@@ -28,7 +28,7 @@ class RDLArgumentError(RDLCompileError):
 class RDLMessagePrinter(MessagePrinter):
 
     def __init__(self):
-        self.severity_desc = { "error" : Severity.ERROR, "warning" : Severity.WARNING, "info" : Severity.INFO, "debug" : Severity.DEBUG}
+        self.severity_desc = {"fatal" : Severity.FATAL, "error" : Severity.ERROR, "warning" : Severity.WARNING, "info" : Severity.INFO, "debug" : Severity.DEBUG}
 
     def enable(self, severity):
         self.severity_desc[severity] = True
@@ -39,7 +39,7 @@ class RDLMessagePrinter(MessagePrinter):
     def print_message(self, severity, text, src_ref=None):
 
         if severity in self.severity_desc :
-            if (severity == "warning" or severity == "error"):
+            if (severity == "warning" or severity == "error" or severity == "fatal"):
                 # use built in support for these severities
                 lines = self.format_message(self.severity_desc[severity], text, src_ref)
                 self.emit_message(lines)
@@ -269,8 +269,10 @@ class ralbotGenerator:
                 sys.exit(1)
 
             if cfg.gen_xml:
+                self.printer.print_message("info", "Generating IP-XACT xml file...")
                 exporter = IPXACTExporter()
                 exporter.export(rdl_root, cfg.output + ".xml")                
+                self.printer.print_message("info", "Generating IP-XACT xml file done...")
 
         except RDLCompileError as e:
             message = str(e)
