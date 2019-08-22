@@ -11,6 +11,8 @@ from rdlcompiler import RdlCompiler
 from ralbot.uvmgen import uvmGenExporter
 from ralbot.headergen import headerGenExporter
 from ralbot.html import HTMLExporter
+from ralbot.ipxact import IPXACTExporter
+
 import markdown
 
 class RDLArgumentError(RDLCompileError):
@@ -108,6 +110,12 @@ class ralbotGenerator:
             action='store_true',
             dest='gen_verilog',
             help="generate register verilog module."
+        )
+        ap.add_argument(
+            '-xml', 
+            action='store_true',
+            dest='gen_xml',
+            help="generate IP-XACT xml file."
         )
         ap.add_argument(
             '-s', '--skip-not-present',
@@ -215,8 +223,8 @@ class ralbotGenerator:
             self.printer.print_message("info", "Start code generation...")
             rdl_root = rdl_compiler.compile()
 
-            if not (cfg.gen_header or cfg.gen_uvm or cfg.gen_docs or cfg.gen_verilog):
-                self.printer.print_message("error", "At least one type(-header, -uvmregs, -doc, -verilog) generate")
+            if not (cfg.gen_header or cfg.gen_uvm or cfg.gen_docs or cfg.gen_verilog or cfg.gen_xml):
+                self.printer.print_message("error", "At least one type(-header, -uvmregs, -doc, -verilog, -xml) generate")
                 sys.exit(1)
             elif cfg.gen_verilog:
                 self.printer.print_message("warning", "Not yet implemented, Coming soon!!!", None)
@@ -259,6 +267,10 @@ class ralbotGenerator:
             if cfg.gen_verilog:
                 self.printer.print_message("info", "Generating reg verilog module...")
                 sys.exit(1)
+
+            if cfg.gen_xml:
+                exporter = IPXACTExporter()
+                exporter.export(rdl_root, cfg.output + ".xml")                
 
         except RDLCompileError as e:
             message = str(e)
