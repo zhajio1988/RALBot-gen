@@ -284,17 +284,20 @@ endclass\n''' % (self.get_class_name(parent, node), node.get_property("mementrie
 
     #set other sw read/write properties (these override sw= setting)    
     def setSwRdWrProperty(self, node):
-        sw = node.get_property("sw")
-        if sw == "rclr":
+        self.isRclr = False
+        self.isRset = False
+        self.isWoclr = False
+        self.isWoset = False
+        if node.get_property("rclr"):
             self.isSwReadable = True
             self.isRclr = True
-        elif sw == "rset":
+        elif node.get_property("rset"):
             self.isSwReadable = True
             self.isRset = True
-        elif sw == "woclr":
+        elif node.get_property("woclr"):
             self.isSwWriteable = True
             self.isWoclr = True
-        elif sw == "woset":
+        elif node.get_property("woset"):
             self.isSwWriteable = True
             self.isWoset = True
 
@@ -327,6 +330,7 @@ endclass\n''' % (self.get_class_name(parent, node), node.get_property("mementrie
         return accessMode
 
     def getRegAccessType(self, node):
+        accessMode = "RO"
         if node.has_sw_writable:
             if node.has_sw_readable:
                 accessMode = "RW"
