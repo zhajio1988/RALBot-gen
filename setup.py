@@ -26,7 +26,6 @@ print("debug point 1")
 Options.docstrings = False
 compiler_directives = {'optimize.unpack_method_calls': False}
 setup(  
-        # cythonize的exclude全路径匹配，不灵活，不如在上一步排除。
         ext_modules = cythonize(extensions, exclude = None, nthreads = 20, quiet = True, build_dir = './build',
                                 language_level = 3 , compiler_directives = compiler_directives))
 
